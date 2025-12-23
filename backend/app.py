@@ -14,14 +14,202 @@ from langchain.schema import Document
 from langchain.prompts import PromptTemplate
 from prompt_templates import system_role
 from actions import handle_adding_budget, handle_adding_todo, save_todo_list, save_travel_plan, update_todo_list, save_budget, update_budget
-import logging 
+from langchain.agents import initialize_agent, AgentType
+from langchain.tools import BaseTool
+from langchain.schema import AgentAction, AgentFinish
+from typing import Optional, Type, List, Dict, Any
+from pydantic import BaseModel, Field
+import re
 
-load_dotenv()
+# Agent Tools
+class CreateTodoListTool(BaseTool):
+    name = "create_todo_list"
+    description = "Creates a new todo list. Input should be the title of the todo list."
+    
+    def _run(self, title: str) -> str:
+        try:
+            filename = save_todo_list(title, [])
+            return f"Created a new todo list called '{title}'! You can add items to it now."
+        except Exception as e:
+            return f"Error creating todo list: {str(e)}"
+    
+    def _arun(self, title: str):
+        raise NotImplementedError("This tool does not support async")
+
+class AddTodoItemTool(BaseTool):
+    name = "add_todo_item"
+    description = "Adds an item to the most recent todo list. Input should be the item text to add."
+    
+    def _run(self, item_text: str) -> str:
+        try:
+            todo_lists_dir = os.path.join(os.path.dirname(__file__), "..", "todo_lists")
+            if os.path.exists(todo_lists_dir):
+                todo_files = [f for f in os.listdir(todo_lists_dir) if f.endswith(".json")]
+                if todo_files:
+                    todo_files.sort(
+                        key=lambda f: os.path.getmtime(os.path.join(todo_lists_dir, f)),
+                        reverse=True,
+                    )
+                    latest_todo = todo_files[0]
+                    
+                    with open(os.path.join(todo_lists_dir, latest_todo), "r", encoding="utf-8") as f:
+                        todo_data = json.load(f)
+                    
+                    new_item = {
+                        "id": len(todo_data["items"]) + 1,
+                        "text": item_text,
+                        "completed": False,
+                        "created": datetime.now().isoformat(),
+                    }
+                    todo_data["items"].append(new_item)
+                    
+                    update_todo_list(latest_todo, todo_data["items"])
+                    return f"Added '{item_text}' to your todo list!"
+                else:
+                    return "No todo lists found. Create one first!"
+            else:
+                return "No todo lists found. Create one first!"
+        except Exception as e:
+            return f"Error adding todo item: {str(e)}"
+    
+    def _arun(self, item_text: str):
+        raise NotImplementedError("This tool does not support async")
+
+class CreateBudgetTool(BaseTool):
+    name = "create_budget"
+    description = "Creates a new budget. Input should be the title of the budget."
+    
+    def _run(self, title: str) -> str:
+        try:
+            filename = save_budget(title, [])
+            return f"Created a new budget called '{title}'! You can add expenses to it now."
+        except Exception as e:
+            return f"Error creating budget: {str(e)}"
+    
+    def _arun(self, title: str):
+        raise NotImplementedError("This tool does not support async")
+
+class AddBudgetItemTool(BaseTool):
+    name = "add_budget_item"
+    description = "Adds an expense to the most recent budget. Input should be 'item_name,amount' format."
+    
+    def _run(self, input_str: str) -> str:
+        try:
+            if ',' in input_str:
+                item_name, amount_str = input_str.split(',', 1)
+                item_name = item_name.strip()
+                amount = float(amount_str.strip())
+            else:
+                return "Please provide input in format: 'item_name,amount'"
+            
+            budgets_dir = os.path.join(os.path.dirname(__file__), "..", "budgets")
+            if os.path.exists(budgets_dir):
+                budget_files = [f for f in os.listdir(budgets_dir) if f.endswith(".json")]
+                if budget_files:
+                    budget_files.sort(
+                        key=lambda f: os.path.getmtime(os.path.join(budgets_dir, f)),
+                        reverse=True,
+                    )
+                    latest_budget = budget_files[0]
+                    
+                    with open(os.path.join(budgets_dir, latest_budget), "r", encoding="utf-8") as f:
+                        budget_data = json.load(f)
+                    
+                    new_item = {
+                        "id": len(budget_data["items"]) + 1,
+                        "name": item_name,
+                        "amount": amount,
+                        "created": datetime.now().isoformat(),
+                    }
+                    budget_data["items"].append(new_item)
+                    
+                    update_budget(latest_budget, budget_data["items"])
+                    return f"Added '{item_name}' (${amount:.2f}) to your budget!"
+                else:
+                    return "No budgets found. Create one first!"
+            else:
+                return "No budgets found. Create one first!"
+        except Exception as e:
+            return f"Error adding budget item: {str(e)}"
+    
+    def _arun(self, input_str: str):
+        raise NotImplementedError("This tool does not support async")
+
+class ShowDocumentTool(BaseTool):
+    name = "show_document"
+    description = "Shows a document (travel plan, todo list, or budget). Input should be 'plan', 'todo', or 'budget'."
+    
+    def _run(self, doc_type: str) -> str:
+        try:
+            if doc_type.lower() == 'plan':
+                travel_plans_dir = os.path.join(os.path.dirname(__file__), '..', 'travel_plans')
+                if os.path.exists(travel_plans_dir):
+                    plan_files = [f for f in os.listdir(travel_plans_dir) if f.endswith('.txt')]
+                    if plan_files:
+                        plan_files.sort(key=lambda f: os.path.getmtime(os.path.join(travel_plans_dir, f)), reverse=True)
+                        return f"SHOW_PLAN:{plan_files[0]}"
+                return "No travel plans found."
+            elif doc_type.lower() == 'todo':
+                todo_lists_dir = os.path.join(os.path.dirname(__file__), '..', 'todo_lists')
+                if os.path.exists(todo_lists_dir):
+                    todo_files = [f for f in os.listdir(todo_lists_dir) if f.endswith('.json')]
+                    if todo_files:
+                        todo_files.sort(key=lambda f: os.path.getmtime(os.path.join(todo_lists_dir, f)), reverse=True)
+                        return f"SHOW_TODO:{todo_files[0]}"
+                return "No todo lists found."
+            elif doc_type.lower() == 'budget':
+                budgets_dir = os.path.join(os.path.dirname(__file__), '..', 'budgets')
+                if os.path.exists(budgets_dir):
+                    budget_files = [f for f in os.listdir(budgets_dir) if f.endswith('.json')]
+                    if budget_files:
+                        budget_files.sort(key=lambda f: os.path.getmtime(os.path.join(budgets_dir, f)), reverse=True)
+                        return f"SHOW_BUDGET:{budget_files[0]}"
+                return "No budgets found."
+            else:
+                return "Invalid document type. Use 'plan', 'todo', or 'budget'."
+        except Exception as e:
+            return f"Error showing document: {str(e)}"
+    
+    def _arun(self, doc_type: str):
+        raise NotImplementedError("This tool does not support async")
+
+class SaveTravelPlanTool(BaseTool):
+    name = "save_travel_plan"
+    description = "Saves a travel plan for a destination. Input should be 'destination,content' format."
+    
+    def _run(self, input_str: str) -> str:
+        try:
+            if ',' in input_str:
+                destination, content = input_str.split(',', 1)
+                destination = destination.strip()
+                content = content.strip()
+            else:
+                return "Please provide input in format: 'destination,content'"
+            
+            filename = save_travel_plan(destination, content)
+            return f"Saved travel plan for {destination}!"
+        except Exception as e:
+            return f"Error saving travel plan: {str(e)}"
+    
+    def _arun(self, input_str: str):
+        raise NotImplementedError("This tool does not support async")
+
+# Initialize agent tools
+tools = [
+    CreateTodoListTool(),
+    AddTodoItemTool(),
+    CreateBudgetTool(),
+    AddBudgetItemTool(),
+    ShowDocumentTool(),
+    SaveTravelPlanTool()
+]
+
+# Initialize agent
+agent = None
 
 app = Flask(__name__)
 CORS(app, origins=[os.getenv('FRONTEND_URL', 'http://localhost:3000')])
 
-# Initialize OpenAI
 openai_api_key = os.getenv('OPENAI_API_KEY')
 if not openai_api_key:
     raise ValueError("OPENAI_API_KEY environment variable is required")
@@ -80,7 +268,7 @@ def initialize_vectorstore():
 
 @app.route('/chat', methods=['POST'])
 def chat():
-    global conversation_history, qa_chain
+    global conversation_history, qa_chain, agent
     
     try:
         data = request.get_json()
@@ -93,172 +281,78 @@ def chat():
         if qa_chain is None:
             initialize_vectorstore()
         
-        # Check if this is the first message or asking about destination
-        is_first_message = len(conversation_history) == 0
-        is_destination_related = any(word in user_message.lower() for word in ['travel', 'go', 'visit', 'destination', 'trip'])
+        # Initialize agent if not done
+        if agent is None:
+            agent = initialize_agent(
+                tools, 
+                llm, 
+                agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION, 
+                verbose=True,
+                handle_parsing_errors=True
+            )
         
         # Variables to track what to return
         plan_to_show = None
         todo_to_show = None
         budget_to_show = None
         
-        if is_first_message:
-            response = "Hello! I'm your Backpacking travel assistant. I'm here to help you plan an amazing trip. What would you like to organise?"
-        else:
-            # Prepare context from conversation history
-            context = "\n".join([f"User: {msg['user']}\nAssistant: {msg['assistant']}" for msg in conversation_history[-3:]])
+        # Prepare context from conversation history
+        context = "\n".join([f"User: {msg['user']}\nAssistant: {msg['assistant']}" for msg in conversation_history[-3:]])
+        
+        # Enhanced prompt that combines travel advice with action capabilities
+        enhanced_prompt = f"""
+You are a helpful travel assistant specializing in Southeast Asia. You can provide travel advice and also help manage travel documents.
+
+Conversation context: {context}
+
+User message: {user_message}
+
+You have access to these tools for document management:
+- create_todo_list: Create a new todo list
+- add_todo_item: Add items to existing todo lists
+- create_budget: Create a new budget
+- add_budget_item: Add expenses to budgets (format: 'item_name,amount')
+- show_document: Show documents ('plan', 'todo', or 'budget')
+- save_travel_plan: Save travel plans (format: 'destination,content')
+
+First, determine if the user wants to:
+1. Manage documents (create/add/show todo lists, budgets, or travel plans)
+2. Get travel advice
+
+If they want document management, use the appropriate tools. If they want travel advice, provide helpful information about Southeast Asia travel.
+
+For travel advice, focus on practical tips about destinations, transportation, accommodation, food, culture, and activities in Southeast Asia.
+"""
+        
+        try:
+            # Use agent to process the message
+            response = agent.run(enhanced_prompt)
             
-            # Create a more specific query for the RAG system
-            enhanced_query = f"Context: {context}\nUser question: {user_message}\n\nPlease provide helpful travel advice for Southeast Asia."
-            
+            # Check if agent response contains document show commands
+            if "SHOW_PLAN:" in response:
+                plan_to_show = response.split("SHOW_PLAN:")[1].strip()
+                response = response.replace(f"SHOW_PLAN:{plan_to_show}", "").strip()
+                if not response:
+                    response = "Here's your latest travel plan:"
+            elif "SHOW_TODO:" in response:
+                todo_to_show = response.split("SHOW_TODO:")[1].strip()
+                response = response.replace(f"SHOW_TODO:{todo_to_show}", "").strip()
+                if not response:
+                    response = "Here's your latest todo list:"
+            elif "SHOW_BUDGET:" in response:
+                budget_to_show = response.split("SHOW_BUDGET:")[1].strip()
+                response = response.replace(f"SHOW_BUDGET:{budget_to_show}", "").strip()
+                if not response:
+                    response = "Here's your latest budget:"
+                    
+        except Exception as agent_error:
+            logging.error(f"Agent error: {str(agent_error)}")
+            # Fallback to RAG if agent fails
             if qa_chain:
+                enhanced_query = f"Context: {context}\nUser question: {user_message}\n\nPlease provide helpful travel advice for Southeast Asia."
                 response = qa_chain.run(enhanced_query)
             else:
-                response = "I'm sorry, I'm having trouble accessing my knowledge base right now. Could you try asking again?"
-            
-            # Check if user is asking to show/display a travel plan, todo list, or budget
-            show_keywords = ['show', 'display', 'view', 'see', 'open']
-            plan_keywords = ['plan', 'plans', 'document', 'documents']
-            todo_keywords = ['todo', 'to-do', 'list', 'task', 'tasks', 'checklist']
-            budget_keywords = ['budget', 'money', 'cost', 'expense', 'expenses', 'spending']
-            
-            is_asking_for_plan = any(show_word in user_message.lower() for show_word in show_keywords) and \
-                                any(plan_word in user_message.lower() for plan_word in plan_keywords)
-            
-            is_asking_for_todo = any(show_word in user_message.lower() for show_word in show_keywords) and \
-                               any(todo_word in user_message.lower() for todo_word in todo_keywords)
-                               
-            is_asking_for_budget = any(show_word in user_message.lower() for show_word in show_keywords) and \
-                                 any(budget_word in user_message.lower() for budget_word in budget_keywords)
-            
-            logging.info(f"is_asking_for_plan: {is_asking_for_plan}, is_asking_for_todo: {is_asking_for_todo}, is_asking_for_budget: {is_asking_for_budget}")
-            
-            # Check for todo list creation commands
-            create_todo_keywords = ['create', 'new', 'make', 'start']
-            is_creating_todo = any(create_word in user_message.lower() for create_word in create_todo_keywords) and \
-                             any(todo_word in user_message.lower() for todo_word in todo_keywords)
-            
-            # Check for budget creation commands
-            is_creating_budget = any(create_word in user_message.lower() for create_word in create_todo_keywords) and \
-                               any(budget_word in user_message.lower() for budget_word in budget_keywords)
-            
-            # Check for adding items to todo list
-            add_keywords = ['add', 'include', 'put']
-            is_adding_to_todo = any(add_word in user_message.lower() for add_word in add_keywords) and \
-                              any(todo_word in user_message.lower() for todo_word in todo_keywords)
-                              
-            # Check for adding items to budget
-            is_adding_to_budget = any(add_word in user_message.lower() for add_word in add_keywords) and \
-                                any(budget_word in user_message.lower() for budget_word in budget_keywords)
-            
-            # Check if user mentioned a specific destination to save
-            destinations = ['thailand', 'vietnam', 'cambodia', 'laos', 'myanmar', 'malaysia', 'singapore', 'indonesia', 'philippines']
-            mentioned_destination = None
-            for dest in destinations:
-                if dest in user_message.lower():
-                    mentioned_destination = dest.title()
-                    break
-            
-            # Handle todo list creation
-            if is_creating_todo:
-                # Extract title from message
-                import re
-                title_patterns = [
-                    r'create.*?(?:todo|to-do|list).*?(?:for|called|named)\s+(.+?)(?:\.|$|,)',
-                    r'new.*?(?:todo|to-do|list).*?(?:for|called|named)\s+(.+?)(?:\.|$|,)',
-                    r'(?:todo|to-do|list).*?(?:for|called|named)\s+(.+?)(?:\.|$|,)'
-                ]
-                
-                title = None
-                for pattern in title_patterns:
-                    match = re.search(pattern, user_message, re.IGNORECASE)
-                    if match:
-                        title = match.group(1).strip()
-                        break
-                
-                if not title:
-                    title = "Travel Todo List"
-                
-                # Create new todo list with initial items if mentioned
-                items = []
-                filename = save_todo_list(title, items)
-                response += f"\n\nI've created a new todo list called '{title}' for you! You can add items to it by saying things like 'add buy sunscreen to my todo list'."
-            
-            # Handle budget creation
-            elif is_creating_budget:
-                logging.info("Handling budget creation...")
-                # Extract title from message
-                import re
-                title_patterns = [
-                    r'create.*?(?:budget).*?(?:for|called|named)\s+(.+?)(?:\.|$|,)',
-                    r'new.*?(?:budget).*?(?:for|called|named)\s+(.+?)(?:\.|$|,)',
-                    r'(?:budget).*?(?:for|called|named)\s+(.+?)(?:\.|$|,)'
-                ]
-                
-                title = None
-                for pattern in title_patterns:
-                    match = re.search(pattern, user_message, re.IGNORECASE)
-                    if match:
-                        title = match.group(1).strip()
-                        break
-                
-                if not title:
-                    title = "Travel Budget"
-                
-                # Create new budget with initial items if mentioned
-                items = []
-                filename = save_budget(title, items)
-                response += f"\n\nI've created a new budget called '{title}' for you! You can add expenses by saying things like 'add hotel $120 to my budget'."
-                budget_to_show = filename
-            
-            elif is_adding_to_todo:              
-                  handle_adding_todo(user_message, add_keywords, response)
-
-            elif is_adding_to_budget:
-                handle_adding_budget(user_message, response)
-            
-            # If asking to show a plan for a specific destination, find the most recent plan
-            if is_asking_for_plan and mentioned_destination:
-                travel_plans_dir = os.path.join(os.path.dirname(__file__), '..', 'travel_plans')
-                if os.path.exists(travel_plans_dir):
-                    # Find the most recent plan for the destination
-                    matching_files = [f for f in os.listdir(travel_plans_dir) 
-                                    if f.startswith(mentioned_destination.lower()) and f.endswith('.txt')]
-                    if matching_files:
-                        # Sort by modification time (newest first)
-                        matching_files.sort(key=lambda f: os.path.getmtime(os.path.join(travel_plans_dir, f)), reverse=True)
-                        plan_to_show = matching_files[0]
-            
-            # If asking to show a todo list
-            elif is_asking_for_todo:
-                logging.info("User is asking to show todo list.")
-                todo_lists_dir = os.path.join(os.path.dirname(__file__), '..', 'todo_lists')
-                if os.path.exists(todo_lists_dir):
-                    todo_files = [f for f in os.listdir(todo_lists_dir) if f.endswith('.json')]
-                    if todo_files:
-                        # Get most recent todo list or find specific one mentioned
-                        todo_files.sort(key=lambda f: os.path.getmtime(os.path.join(todo_lists_dir, f)), reverse=True)
-                        todo_to_show = todo_files[0]
-            
-            # If asking to show a budget
-            elif is_asking_for_budget:
-                logging.info("User is asking to show budget.")
-                budgets_dir = os.path.join(os.path.dirname(__file__), '..', 'budgets')
-                if os.path.exists(budgets_dir):
-                    budget_files = [f for f in os.listdir(budgets_dir) if f.endswith('.json')]
-                    if budget_files:
-                        # Get most recent budget
-                        budget_files.sort(key=lambda f: os.path.getmtime(os.path.join(budgets_dir, f)), reverse=True)
-                        budget_to_show = budget_files[0]
-            
-            # Only save travel plans for explicit planning requests, not every mention of a destination
-            planning_keywords = ['plan', 'planning', 'itinerary', 'schedule', 'organize', 'prepare for']
-            is_requesting_plan = any(plan_word in user_message.lower() for plan_word in planning_keywords)
-            
-            if mentioned_destination and is_destination_related and is_requesting_plan and not is_asking_for_plan:
-                plan_content = f"User interest: {user_message}\nRecommendation: {response}"
-                filename = save_travel_plan(mentioned_destination, plan_content)
-                response += f"\n\nI've saved your interest in {mentioned_destination} to your travel plans!"
+                response = "I'm sorry, I'm having trouble processing your request right now. Could you try asking again?"
         
         # Add to conversation history
         conversation_history.append({
@@ -267,7 +361,7 @@ def chat():
             'timestamp': datetime.now().isoformat()
         })
         
-        # Prepare response with optional plan to show
+        # Prepare response with optional documents to show
         response_data = {
             'response': response,
             'timestamp': datetime.now().isoformat()

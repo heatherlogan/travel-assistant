@@ -1,79 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
+import {
+  Message,
+  ChatResponse,
+  TravelPlan,
+  TodoList,
+  Budget,
+  TravelPlanSummary,
+  TodoListSummary,
+  BudgetSummary 
+} from './types';
 import './App.css';
-
-interface Message {
-  user: string;
-  assistant: string;
-  timestamp: string;
-}
-
-interface ChatResponse {
-  response: string;
-  timestamp: string;
-  show_plan?: string;
-  show_todo?: string;
-  show_budget?: string;
-}
-
-interface BudgetItem {
-  id: number;
-  name: string;
-  amount: number;
-  created: string;
-}
-
-interface Budget {
-  filename: string;
-  title: string;
-  created: string;
-  updated: string;
-  items: BudgetItem[];
-}
-
-interface BudgetSummary {
-  filename: string;
-  title: string;
-  created: string;
-  updated: string;
-  item_count: number;
-  total_amount: number;
-}
-
-interface TravelPlan {
-  filename: string;
-  destination: string;
-  content: string;
-}
-
-interface TodoItem {
-  id: number;
-  text: string;
-  completed: boolean;
-  created: string;
-}
-
-interface TodoList {
-  filename: string;
-  title: string;
-  created: string;
-  updated: string;
-  items: TodoItem[];
-}
-
-interface TravelPlanSummary {
-  filename: string;
-  destination: string;
-  created: string;
-}
-
-interface TodoListSummary {
-  filename: string;
-  title: string;
-  created: string;
-  updated: string;
-  item_count: number;
-  completed_count: number;
-}
 
 function App() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -350,6 +286,7 @@ function App() {
   const deleteDocument = async (filename: string, type: 'plan' | 'todo' | 'budget', event: React.MouseEvent) => {
     event.stopPropagation(); // Prevent clicking through to select document
     
+    // eslint-disable-next-line no-restricted-globals
     if (!confirm(`Are you sure you want to delete this ${type}?`)) {
       return;
     }

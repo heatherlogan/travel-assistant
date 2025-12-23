@@ -54,6 +54,12 @@ def handle_adding_todo(user_message, add_keywords, response):
                 # Update the file
                 update_todo_list(latest_todo, todo_data["items"])
                 response += f"\n\nI've added '{item_text}' to your todo list!"
+        else:
+            response += "\n\nYou don't have any todo lists yet. Create one first by saying 'create a new todo list'."
+    else:
+        response += "\n\nYou don't have any todo lists yet. Create one first by saying 'create a new todo list'."
+    
+    return response
 
 
 def handle_adding_budget(user_message, response):
@@ -116,8 +122,7 @@ def handle_adding_budget(user_message, response):
                 response += "\n\nI couldn't understand the budget item format. Try something like 'add hotel $120 to my budget'."
         else:
             response += "\n\nYou don't have any budget lists yet. Create one first by saying 'create a new budget'."
-    else:
-        response += "\n\nYou don't have any budget lists yet. Create one first by saying 'create a new budget'."
+    return response
 
 
 def save_travel_plan(destination, content):

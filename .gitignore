@@ -232,5 +232,15 @@ chroma_db/
 # Travel plans and documents (keep structure but ignore content)
 travel_plans/*.txt
 documents/*.txt
+todo_lists/*.json
+budgets/*.json
 !travel_plans/.gitkeep
 !documents/.gitkeep
+!todo_lists/.gitkeep
+!budgets/.gitkeep
+
+# User-generated content directories (alternative approach - uncomment if you want to ignore entire directories)
+# travel_plans/
+# documents/ 
+# todo_lists/
+# budgets/

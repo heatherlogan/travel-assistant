@@ -1,0 +1,2 @@
+# This file ensures the budgets directory is tracked in git
+# User-generated budget files are ignored via .gitignore

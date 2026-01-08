@@ -1,6 +1,6 @@
 # Travel Assistant Project Instructions
 
-This project creates a conversational AI travel assistant for Southeast Asia trip planning using:
+This project creates a conversational AI travel assistant for backpacking trip planning using:
 - React frontend with chatbot interface
 - Python backend with RAG using LangChain and OpenAI
 - Document storage for travel plans

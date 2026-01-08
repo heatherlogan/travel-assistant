@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Message,
   ChatResponse,
@@ -9,6 +9,8 @@ import {
   TodoListSummary,
   BudgetSummary 
 } from './types';
+import ChatSection from './ChatSection';
+import DocumentPanel from './DocumentPanel';
 import './App.css';
 
 function App() {
@@ -25,15 +27,6 @@ function App() {
   const [availablePlans, setAvailablePlans] = useState<TravelPlanSummary[]>([]);
   const [availableTodos, setAvailableTodos] = useState<TodoListSummary[]>([]);
   const [availableBudgets, setAvailableBudgets] = useState<BudgetSummary[]>([]);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
 
   useEffect(() => {
     // Load conversation history and available documents on component mount
@@ -197,6 +190,16 @@ function App() {
   const sendMessage = async (message: string) => {
     if (!message.trim()) return;
 
+    // Add user message to history immediately
+    const userMessage: Message = {
+      user: message,
+      assistant: '', // Will be filled when response arrives
+      timestamp: new Date().toISOString()
+    };
+    
+    setMessages(prev => [...prev, userMessage]);
+    setInputMessage('');
+    setIsFirstLoad(false);
     setIsLoading(true);
     
     try {
@@ -211,15 +214,19 @@ function App() {
       const data: ChatResponse = await response.json();
       
       if (response.ok) {
-        const newMessage: Message = {
-          user: message,
-          assistant: data.response,
-          timestamp: data.timestamp
-        };
-        
-        setMessages(prev => [...prev, newMessage]);
-        setInputMessage('');
-        setIsFirstLoad(false);
+        // Update the last message with the assistant's response
+        setMessages(prev => {
+          const updatedMessages = [...prev];
+          const lastMessage = updatedMessages[updatedMessages.length - 1];
+          if (lastMessage && lastMessage.user === message) {
+            updatedMessages[updatedMessages.length - 1] = {
+              ...lastMessage,
+              assistant: data.response,
+              timestamp: data.timestamp
+            };
+          }
+          return updatedMessages;
+        });
         
         // Check if response includes a plan, todo, or budget to show
         if (data.show_plan) {
@@ -230,9 +237,35 @@ function App() {
           await loadBudget(data.show_budget);
         }
       } else {
+        // Update the last message with error response
+        setMessages(prev => {
+          const updatedMessages = [...prev];
+          const lastMessage = updatedMessages[updatedMessages.length - 1];
+          if (lastMessage && lastMessage.user === message) {
+            updatedMessages[updatedMessages.length - 1] = {
+              ...lastMessage,
+              assistant: 'Sorry, I encountered an error processing your request. Please try again.',
+              timestamp: new Date().toISOString()
+            };
+          }
+          return updatedMessages;
+        });
         console.error('Error sending message:', data);
       }
     } catch (error) {
+      // Update the last message with error response
+      setMessages(prev => {
+        const updatedMessages = [...prev];
+        const lastMessage = updatedMessages[updatedMessages.length - 1];
+        if (lastMessage && lastMessage.user === message) {
+          updatedMessages[updatedMessages.length - 1] = {
+            ...lastMessage,
+            assistant: 'Sorry, I encountered a network error. Please check your connection and try again.',
+            timestamp: new Date().toISOString()
+          };
+        }
+        return updatedMessages;
+      });
       console.error('Error sending message:', error);
     } finally {
       setIsLoading(false);
@@ -260,6 +293,11 @@ function App() {
     setCurrentPlan(null);
     setCurrentTodo(null);
     setCurrentBudget(null);
+  };
+
+  const showDocumentPanelHandler = async () => {
+    setShowDocumentPanel(true);
+    await loadAvailableDocuments();
   };
 
   const handleTabChange = async (tab: 'plans' | 'todos' | 'budgets') => {
@@ -339,20 +377,30 @@ function App() {
     }
   };
 
-  // Show welcome message if no history and first load
-  const showWelcome = isFirstLoad && messages.length === 0;
+  const handleBackToList = () => {
+    setCurrentPlan(null);
+    setCurrentTodo(null);
+    setCurrentBudget(null);
+  };
 
   return (
     <div className="App">
       <header className="app-header">
         <h1>🌏 Travel Assistant</h1>
         <div className="header-buttons">
-          {showDocumentPanel && (
+          {showDocumentPanel ? (
             <button 
               onClick={closeDocumentPanel} 
               className="toggle-button"
             >
               Hide Document
+            </button>
+          ) : (
+            <button 
+              onClick={showDocumentPanelHandler} 
+              className="toggle-button"
+            >
+              Show Document
             </button>
           )}
           <button 
@@ -366,336 +414,34 @@ function App() {
       </header>
       
       <div className="main-container">
-        <div className={`chat-container ${showDocumentPanel ? 'split-view' : ''}`}>
-          <div className="messages-container">
-            {showWelcome && (
-              <div className="welcome-message">
-                <div className="message assistant-message">
-                  <div className="message-content">
-                    Hello! I'm your travel assistant. I'm here to help you plan an amazing trip. Where would you like to travel? You can mention specific countries like Thailand, Vietnam, Cambodia, or cities like Bangkok, Ho Chi Minh City, or Siem Reap.
-                    <br /><br />
-                    <em>💡 Try saying "show Thailand plan" to view your saved travel documents!</em>
-                    <br />
-                    <em>📝 You can also create todo lists by saying "create a new todo list" or "add buy sunscreen to my todo list"</em>
-                    <br />
-                    <em>💰 Track your expenses by saying "create a new budget" or "add hotel $120 to my budget"</em>
-                  </div>
-                  <div className="message-time">
-                    {new Date().toLocaleTimeString()}
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            {messages.map((message, index) => (
-              <div key={index} className="conversation">
-                <div className="message user-message">
-                  <div className="message-content">{message.user}</div>
-                  <div className="message-time">
-                    {new Date(message.timestamp).toLocaleTimeString()}
-                  </div>
-                </div>
-                <div className="message assistant-message">
-                  <div className="message-content">{message.assistant}</div>
-                  <div className="message-time">
-                    {new Date(message.timestamp).toLocaleTimeString()}
-                  </div>
-                </div>
-              </div>
-            ))}
-            
-            {isLoading && (
-              <div className="message assistant-message loading">
-                <div className="message-content">
-                  <div className="typing-indicator">
-                    <span></span>
-                    <span></span>
-                    <span></span>
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            <div ref={messagesEndRef} />
-          </div>
-          
-          <form onSubmit={handleSubmit} className="input-form">
-            <div className="input-container">
-              <textarea
-                value={inputMessage}
-                onChange={(e) => setInputMessage(e.target.value)}
-                onKeyPress={handleKeyPress}
-                placeholder="Ask me about travel plans, destinations, activities, or say 'show [country] plan' to view travel documents. You can also create todo lists, budgets, or add items like 'add hotel $120 to my budget'..."
-                disabled={isLoading}
-                rows={3}
-              />
-              <button type="submit" disabled={isLoading || !inputMessage.trim()}>
-                {isLoading ? '...' : 'Send'}
-              </button>
-            </div>
-          </form>
-        </div>
+        <ChatSection
+          messages={messages}
+          inputMessage={inputMessage}
+          isLoading={isLoading}
+          isFirstLoad={isFirstLoad}
+          showDocumentPanel={showDocumentPanel}
+          onInputChange={setInputMessage}
+          onSubmit={handleSubmit}
+          onKeyPress={handleKeyPress}
+        />
         
-        {showDocumentPanel && (
-          <div className="document-panel">
-            <div className="document-header">
-              <div className="document-tabs">
-                <button 
-                  className={`tab ${activeTab === 'plans' ? 'active' : ''}`}
-                  onClick={() => handleTabChange('plans')}
-                >
-                  📋 Travel Plans ({availablePlans.length})
-                </button>
-                <button 
-                  className={`tab ${activeTab === 'todos' ? 'active' : ''}`}
-                  onClick={() => handleTabChange('todos')}
-                >
-                  ✅ Todo Lists ({availableTodos.length})
-                </button>
-                <button 
-                  className={`tab ${activeTab === 'budgets' ? 'active' : ''}`}
-                  onClick={() => handleTabChange('budgets')}
-                >
-                  💰 Budgets ({availableBudgets.length})
-                </button>
-              </div>
-              <button onClick={closeDocumentPanel} className="close-button">
-                ✕
-              </button>
-            </div>
-            
-            <div className="document-content">
-              {/* Show document/todo lists when no specific item is selected */}
-              {!currentPlan && !currentTodo && !currentBudget && (
-                <div className="document-browser">
-                  {activeTab === 'plans' && (
-                    <div className="document-list">
-                      {availablePlans.length === 0 ? (
-                        <p className="empty-list">No travel plans yet. Create some by chatting about destinations!</p>
-                      ) : (
-                        availablePlans.map((plan) => (
-                          <div 
-                            key={plan.filename} 
-                            className="document-item"
-                            onClick={() => selectDocument(plan.filename, 'plan')}
-                          >
-                            <div className="document-item-header">
-                              <h3>📍 {plan.destination}</h3>
-                              <div className="document-actions">
-                                <span className="document-date">
-                                  {new Date(plan.created).toLocaleDateString()}
-                                </span>
-                                <button 
-                                  className="delete-button"
-                                  onClick={(e) => deleteDocument(plan.filename, 'plan', e)}
-                                  title="Delete travel plan"
-                                >
-                                  🗑️
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  )}
-                  
-                  {activeTab === 'todos' && (
-                    <div className="document-list">
-                      {availableTodos.length === 0 ? (
-                        <p className="empty-list">No todo lists yet. Create some by saying "create a new todo list"!</p>
-                      ) : (
-                        availableTodos.map((todo) => (
-                          <div 
-                            key={todo.filename} 
-                            className="document-item"
-                            onClick={() => selectDocument(todo.filename, 'todo')}
-                          >
-                            <div className="document-item-header">
-                              <h3>📝 {todo.title}</h3>
-                              <div className="document-actions">
-                                <span className="document-date">
-                                  {new Date(todo.created).toLocaleDateString()}
-                                </span>
-                                <button 
-                                  className="delete-button"
-                                  onClick={(e) => deleteDocument(todo.filename, 'todo', e)}
-                                  title="Delete todo list"
-                                >
-                                  🗑️
-                                </button>
-                              </div>
-                            </div>
-                            <div className="todo-preview">
-                              <span className="progress-indicator">
-                                {todo.completed_count} of {todo.item_count} completed
-                              </span>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  )}
-                  
-                  {activeTab === 'budgets' && (
-                    <div className="document-list">
-                      {availableBudgets.length === 0 ? (
-                        <p className="empty-list">No budgets yet. Create some by saying "create a new budget"!</p>
-                      ) : (
-                        availableBudgets.map((budget) => (
-                          <div 
-                            key={budget.filename} 
-                            className="document-item"
-                            onClick={() => selectDocument(budget.filename, 'budget')}
-                          >
-                            <div className="document-item-header">
-                              <h3>💰 {budget.title}</h3>
-                              <div className="document-actions">
-                                <span className="document-date">
-                                  {new Date(budget.created).toLocaleDateString()}
-                                </span>
-                                <button 
-                                  className="delete-button"
-                                  onClick={(e) => deleteDocument(budget.filename, 'budget', e)}
-                                  title="Delete budget"
-                                >
-                                  🗑️
-                                </button>
-                              </div>
-                            </div>
-                            <div className="budget-preview">
-                              <span className="budget-total">
-                                ${budget.total_amount.toFixed(2)} ({budget.item_count} items)
-                              </span>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-              
-              {/* Show specific document content when selected */}
-              {documentType === 'plan' && currentPlan && (
-                <div className="document-viewer">
-                  <div className="viewer-header">
-                    <button 
-                      className="back-button"
-                      onClick={() => { setCurrentPlan(null); setCurrentTodo(null); setCurrentBudget(null); }}
-                    >
-                      ← Back to {activeTab === 'plans' ? 'Travel Plans' : activeTab === 'todos' ? 'Todo Lists' : 'Budgets'}
-                    </button>
-                    <h2>📋 {currentPlan.destination} Travel Plan</h2>
-                  </div>
-                  <div className="document-text">
-                    <pre>{currentPlan.content}</pre>
-                  </div>
-                </div>
-              )}
-              
-              {documentType === 'todo' && currentTodo && (
-                <div className="document-viewer">
-                  <div className="viewer-header">
-                    <button 
-                      className="back-button"
-                      onClick={() => { setCurrentPlan(null); setCurrentTodo(null); setCurrentBudget(null); }}
-                    >
-                      ← Back to {activeTab === 'plans' ? 'Travel Plans' : activeTab === 'todos' ? 'Todo Lists' : 'Budgets'}
-                    </button>
-                    <h2>✅ {currentTodo.title}</h2>
-                  </div>
-                  <div className="todo-list">
-                    <div className="todo-meta">
-                      <p className="todo-info">
-                        Created: {new Date(currentTodo.created).toLocaleDateString()}
-                        {currentTodo.updated !== currentTodo.created && (
-                          <span> • Updated: {new Date(currentTodo.updated).toLocaleDateString()}</span>
-                        )}
-                      </p>
-                      <p className="todo-progress">
-                        {currentTodo.items.filter(item => item.completed).length} of {currentTodo.items.length} completed
-                      </p>
-                    </div>
-                    {currentTodo.items.length === 0 ? (
-                      <p className="empty-todo">No items yet. Add some by chatting with the assistant!</p>
-                    ) : (
-                      <ul className="todo-items">
-                        {currentTodo.items.map((item) => (
-                          <li key={item.id} className={`todo-item ${item.completed ? 'completed' : ''}`}>
-                            <label className="todo-checkbox">
-                              <input
-                                type="checkbox"
-                                checked={item.completed}
-                                onChange={(e) => updateTodoItem(item.id, e.target.checked)}
-                              />
-                              <span className="checkmark"></span>
-                              <span className="todo-text">{item.text}</span>
-                            </label>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                </div>
-              )}
-              
-              {documentType === 'budget' && currentBudget && (
-                <div className="document-viewer">
-                  <div className="viewer-header">
-                    <button 
-                      className="back-button"
-                      onClick={() => { setCurrentPlan(null); setCurrentTodo(null); setCurrentBudget(null); }}
-                    >
-                      ← Back to {activeTab === 'plans' ? 'Travel Plans' : activeTab === 'todos' ? 'Todo Lists' : 'Budgets'}
-                    </button>
-                    <h2>💰 {currentBudget.title}</h2>
-                  </div>
-                  <div className="budget-content">
-                    <div className="budget-meta">
-                      <p className="budget-info">
-                        Created: {new Date(currentBudget.created).toLocaleDateString()}
-                        {currentBudget.updated !== currentBudget.created && (
-                          <span> • Updated: {new Date(currentBudget.updated).toLocaleDateString()}</span>
-                        )}
-                      </p>
-                    </div>
-                    {currentBudget.items.length === 0 ? (
-                      <p className="empty-budget">No budget items yet. Add some by chatting with the assistant!</p>
-                    ) : (
-                      <div className="budget-table-container">
-                        <table className="budget-table">
-                          <thead>
-                            <tr>
-                              <th>Item</th>
-                              <th>Amount</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {currentBudget.items.map((item) => (
-                              <tr key={item.id} className="budget-item">
-                                <td className="item-name">{item.name}</td>
-                                <td className="item-amount">${item.amount.toFixed(2)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                          <tfoot>
-                            <tr className="budget-total-row">
-                              <td className="total-label"><strong>Total</strong></td>
-                              <td className="total-amount">
-                                <strong>${currentBudget.items.reduce((sum, item) => sum + item.amount, 0).toFixed(2)}</strong>
-                              </td>
-                            </tr>
-                          </tfoot>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+        <DocumentPanel
+          showDocumentPanel={showDocumentPanel}
+          activeTab={activeTab}
+          currentPlan={currentPlan}
+          currentTodo={currentTodo}
+          currentBudget={currentBudget}
+          documentType={documentType}
+          availablePlans={availablePlans}
+          availableTodos={availableTodos}
+          availableBudgets={availableBudgets}
+          onCloseDocumentPanel={closeDocumentPanel}
+          onTabChange={handleTabChange}
+          onSelectDocument={selectDocument}
+          onDeleteDocument={deleteDocument}
+          onUpdateTodoItem={updateTodoItem}
+          onBackToList={handleBackToList}
+        />
       </div>
     </div>
   );

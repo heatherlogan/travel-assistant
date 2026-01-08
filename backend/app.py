@@ -1,3 +1,4 @@
+import logging
 import os
 import json
 from datetime import datetime
@@ -10,191 +11,25 @@ from langchain.text_splitter import CharacterTextSplitter
 from langchain.chains import RetrievalQA
 from langchain_openai import ChatOpenAI
 from langchain_community.document_loaders import DirectoryLoader, TextLoader
-from langchain.schema import Document
 from langchain.prompts import PromptTemplate
-from prompt_templates import system_role
-from actions import handle_adding_budget, handle_adding_todo, save_todo_list, save_travel_plan, update_todo_list, save_budget, update_budget
-from langchain.agents import initialize_agent, AgentType
-from langchain.tools import BaseTool
-from langchain.schema import AgentAction, AgentFinish
-from typing import Optional, Type, List, Dict, Any
-from pydantic import BaseModel, Field
-import re
+from agents import AddBudgetItemTool, AddTodoItemTool, CreateBudgetTool, CreateTodoListTool, SaveTravelPlanTool, ShowDocumentTool
+from prompt_templates import AGENT_PROMPT, AGENT_PROMPT, SYSTEM_PROMPT
+from actions import update_todo_list, update_budget
+from langchain.agents import create_agent, AgentType
 
-# Agent Tools
-class CreateTodoListTool(BaseTool):
-    name = "create_todo_list"
-    description = "Creates a new todo list. Input should be the title of the todo list."
-    
-    def _run(self, title: str) -> str:
-        try:
-            filename = save_todo_list(title, [])
-            return f"Created a new todo list called '{title}'! You can add items to it now."
-        except Exception as e:
-            return f"Error creating todo list: {str(e)}"
-    
-    def _arun(self, title: str):
-        raise NotImplementedError("This tool does not support async")
+load_dotenv()
 
-class AddTodoItemTool(BaseTool):
-    name = "add_todo_item"
-    description = "Adds an item to the most recent todo list. Input should be the item text to add."
-    
-    def _run(self, item_text: str) -> str:
-        try:
-            todo_lists_dir = os.path.join(os.path.dirname(__file__), "..", "todo_lists")
-            if os.path.exists(todo_lists_dir):
-                todo_files = [f for f in os.listdir(todo_lists_dir) if f.endswith(".json")]
-                if todo_files:
-                    todo_files.sort(
-                        key=lambda f: os.path.getmtime(os.path.join(todo_lists_dir, f)),
-                        reverse=True,
-                    )
-                    latest_todo = todo_files[0]
-                    
-                    with open(os.path.join(todo_lists_dir, latest_todo), "r", encoding="utf-8") as f:
-                        todo_data = json.load(f)
-                    
-                    new_item = {
-                        "id": len(todo_data["items"]) + 1,
-                        "text": item_text,
-                        "completed": False,
-                        "created": datetime.now().isoformat(),
-                    }
-                    todo_data["items"].append(new_item)
-                    
-                    update_todo_list(latest_todo, todo_data["items"])
-                    return f"Added '{item_text}' to your todo list!"
-                else:
-                    return "No todo lists found. Create one first!"
-            else:
-                return "No todo lists found. Create one first!"
-        except Exception as e:
-            return f"Error adding todo item: {str(e)}"
-    
-    def _arun(self, item_text: str):
-        raise NotImplementedError("This tool does not support async")
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler()  # This outputs to console
+    ]
+)
 
-class CreateBudgetTool(BaseTool):
-    name = "create_budget"
-    description = "Creates a new budget. Input should be the title of the budget."
-    
-    def _run(self, title: str) -> str:
-        try:
-            filename = save_budget(title, [])
-            return f"Created a new budget called '{title}'! You can add expenses to it now."
-        except Exception as e:
-            return f"Error creating budget: {str(e)}"
-    
-    def _arun(self, title: str):
-        raise NotImplementedError("This tool does not support async")
+agent = None
 
-class AddBudgetItemTool(BaseTool):
-    name = "add_budget_item"
-    description = "Adds an expense to the most recent budget. Input should be 'item_name,amount' format."
-    
-    def _run(self, input_str: str) -> str:
-        try:
-            if ',' in input_str:
-                item_name, amount_str = input_str.split(',', 1)
-                item_name = item_name.strip()
-                amount = float(amount_str.strip())
-            else:
-                return "Please provide input in format: 'item_name,amount'"
-            
-            budgets_dir = os.path.join(os.path.dirname(__file__), "..", "budgets")
-            if os.path.exists(budgets_dir):
-                budget_files = [f for f in os.listdir(budgets_dir) if f.endswith(".json")]
-                if budget_files:
-                    budget_files.sort(
-                        key=lambda f: os.path.getmtime(os.path.join(budgets_dir, f)),
-                        reverse=True,
-                    )
-                    latest_budget = budget_files[0]
-                    
-                    with open(os.path.join(budgets_dir, latest_budget), "r", encoding="utf-8") as f:
-                        budget_data = json.load(f)
-                    
-                    new_item = {
-                        "id": len(budget_data["items"]) + 1,
-                        "name": item_name,
-                        "amount": amount,
-                        "created": datetime.now().isoformat(),
-                    }
-                    budget_data["items"].append(new_item)
-                    
-                    update_budget(latest_budget, budget_data["items"])
-                    return f"Added '{item_name}' (${amount:.2f}) to your budget!"
-                else:
-                    return "No budgets found. Create one first!"
-            else:
-                return "No budgets found. Create one first!"
-        except Exception as e:
-            return f"Error adding budget item: {str(e)}"
-    
-    def _arun(self, input_str: str):
-        raise NotImplementedError("This tool does not support async")
-
-class ShowDocumentTool(BaseTool):
-    name = "show_document"
-    description = "Shows a document (travel plan, todo list, or budget). Input should be 'plan', 'todo', or 'budget'."
-    
-    def _run(self, doc_type: str) -> str:
-        try:
-            if doc_type.lower() == 'plan':
-                travel_plans_dir = os.path.join(os.path.dirname(__file__), '..', 'travel_plans')
-                if os.path.exists(travel_plans_dir):
-                    plan_files = [f for f in os.listdir(travel_plans_dir) if f.endswith('.txt')]
-                    if plan_files:
-                        plan_files.sort(key=lambda f: os.path.getmtime(os.path.join(travel_plans_dir, f)), reverse=True)
-                        return f"SHOW_PLAN:{plan_files[0]}"
-                return "No travel plans found."
-            elif doc_type.lower() == 'todo':
-                todo_lists_dir = os.path.join(os.path.dirname(__file__), '..', 'todo_lists')
-                if os.path.exists(todo_lists_dir):
-                    todo_files = [f for f in os.listdir(todo_lists_dir) if f.endswith('.json')]
-                    if todo_files:
-                        todo_files.sort(key=lambda f: os.path.getmtime(os.path.join(todo_lists_dir, f)), reverse=True)
-                        return f"SHOW_TODO:{todo_files[0]}"
-                return "No todo lists found."
-            elif doc_type.lower() == 'budget':
-                budgets_dir = os.path.join(os.path.dirname(__file__), '..', 'budgets')
-                if os.path.exists(budgets_dir):
-                    budget_files = [f for f in os.listdir(budgets_dir) if f.endswith('.json')]
-                    if budget_files:
-                        budget_files.sort(key=lambda f: os.path.getmtime(os.path.join(budgets_dir, f)), reverse=True)
-                        return f"SHOW_BUDGET:{budget_files[0]}"
-                return "No budgets found."
-            else:
-                return "Invalid document type. Use 'plan', 'todo', or 'budget'."
-        except Exception as e:
-            return f"Error showing document: {str(e)}"
-    
-    def _arun(self, doc_type: str):
-        raise NotImplementedError("This tool does not support async")
-
-class SaveTravelPlanTool(BaseTool):
-    name = "save_travel_plan"
-    description = "Saves a travel plan for a destination. Input should be 'destination,content' format."
-    
-    def _run(self, input_str: str) -> str:
-        try:
-            if ',' in input_str:
-                destination, content = input_str.split(',', 1)
-                destination = destination.strip()
-                content = content.strip()
-            else:
-                return "Please provide input in format: 'destination,content'"
-            
-            filename = save_travel_plan(destination, content)
-            return f"Saved travel plan for {destination}!"
-        except Exception as e:
-            return f"Error saving travel plan: {str(e)}"
-    
-    def _arun(self, input_str: str):
-        raise NotImplementedError("This tool does not support async")
-
-# Initialize agent tools
 tools = [
     CreateTodoListTool(),
     AddTodoItemTool(),
@@ -203,9 +38,6 @@ tools = [
     ShowDocumentTool(),
     SaveTravelPlanTool()
 ]
-
-# Initialize agent
-agent = None
 
 app = Flask(__name__)
 CORS(app, origins=[os.getenv('FRONTEND_URL', 'http://localhost:3000')])
@@ -216,26 +48,12 @@ if not openai_api_key:
 
 # Initialize LangChain components
 embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
-llm = ChatOpenAI(temperature=0.7, openai_api_key=openai_api_key)
+llm = ChatOpenAI(openai_api_key=openai_api_key)
 
 # Global variables
 vectorstore = None
 qa_chain = None
 conversation_history = []
-
-# System prompt template using the fixed systemRole
-SYSTEM_PROMPT_TEMPLATE = f"""{system_role}
-
-Context from knowledge base: {{context}}
-
-Question: {{question}}
-
-Answer:"""
-
-SYSTEM_PROMPT = PromptTemplate(
-    template=SYSTEM_PROMPT_TEMPLATE,
-    input_variables=["context", "question"]
-)
 
 def initialize_vectorstore():
 
@@ -273,6 +91,8 @@ def chat():
     try:
         data = request.get_json()
         user_message = data.get('message', '')
+
+        logging.info(f"Received user message: {user_message}")
         
         if not user_message:
             return jsonify({'error': 'Message is required'}), 400
@@ -282,15 +102,16 @@ def chat():
             initialize_vectorstore()
         
         # Initialize agent if not done
-        if agent is None:
-            agent = initialize_agent(
-                tools, 
-                llm, 
-                agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION, 
-                verbose=True,
-                handle_parsing_errors=True
-            )
-        
+        # if agent is None:
+        #     agent = initialize_agent(
+        #         tools, 
+        #         llm, 
+        #         agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION, 
+        #         verbose=True,
+        #         handle_parsing_errors=True
+        #     )
+        agent = create_agent("gpt-5", tools=tools)
+
         # Variables to track what to return
         plan_to_show = None
         todo_to_show = None
@@ -299,34 +120,13 @@ def chat():
         # Prepare context from conversation history
         context = "\n".join([f"User: {msg['user']}\nAssistant: {msg['assistant']}" for msg in conversation_history[-3:]])
         
-        # Enhanced prompt that combines travel advice with action capabilities
-        enhanced_prompt = f"""
-You are a helpful travel assistant specializing in Southeast Asia. You can provide travel advice and also help manage travel documents.
+        logging.info(f"Context for agent: {context}")
 
-Conversation context: {context}
-
-User message: {user_message}
-
-You have access to these tools for document management:
-- create_todo_list: Create a new todo list
-- add_todo_item: Add items to existing todo lists
-- create_budget: Create a new budget
-- add_budget_item: Add expenses to budgets (format: 'item_name,amount')
-- show_document: Show documents ('plan', 'todo', or 'budget')
-- save_travel_plan: Save travel plans (format: 'destination,content')
-
-First, determine if the user wants to:
-1. Manage documents (create/add/show todo lists, budgets, or travel plans)
-2. Get travel advice
-
-If they want document management, use the appropriate tools. If they want travel advice, provide helpful information about Southeast Asia travel.
-
-For travel advice, focus on practical tips about destinations, transportation, accommodation, food, culture, and activities in Southeast Asia.
-"""
-        
         try:
             # Use agent to process the message
-            response = agent.run(enhanced_prompt)
+            response = agent.run(AGENT_PROMPT(context, user_message ))
+
+            logging.info(f"agent response: {response}")
             
             # Check if agent response contains document show commands
             if "SHOW_PLAN:" in response:
@@ -349,7 +149,7 @@ For travel advice, focus on practical tips about destinations, transportation, a
             logging.error(f"Agent error: {str(agent_error)}")
             # Fallback to RAG if agent fails
             if qa_chain:
-                enhanced_query = f"Context: {context}\nUser question: {user_message}\n\nPlease provide helpful travel advice for Southeast Asia."
+                enhanced_query = f"Context: {context}\nUser question: {user_message}\n\nPlease provide helpful travel advice for backpacking."
                 response = qa_chain.run(enhanced_query)
             else:
                 response = "I'm sorry, I'm having trouble processing your request right now. Could you try asking again?"

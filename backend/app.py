@@ -5,20 +5,31 @@ from datetime import datetime
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
-from documents import initialize_vectorstore, conversation_history, qa_chain
+from documents import initialize_vectorstore
 from chat_model import CustomAgentExecutor
 from tool_actions import update_todo_list
+from documents import vectorstore
 
 load_dotenv()
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler() 
+    ]
+)
+
 agent = None
+conversation_history = []
 
 app = Flask(__name__)
 CORS(app, origins=[os.getenv('FRONTEND_URL', 'http://localhost:3000')])
 
 @app.route('/chat', methods=['POST'])
 def chat():
-    global conversation_history, qa_chain, agent
+    global conversation_history, agent, vectorstore
     
     try:
         data = request.get_json()
@@ -30,16 +41,16 @@ def chat():
             return jsonify({'error': 'Message is required'}), 400
         
         # Initialize vector store if not done
-        if qa_chain is None:
+        if vectorstore is None:
             initialize_vectorstore()
         
         # Initialize agent if not done
         if agent is None:
             agent = CustomAgentExecutor(max_iterations=3)
             
-        answer = agent.invoke(input=user_message)
+        answer = agent.invoke(input=user_message, conversation_history=conversation_history)
 
-        logging.info("Agent invocation completed: ", answer)
+        logging.info(f"Agent invocation completed: {answer}")
         
         # Parse the answer if it's a JSON string
         if isinstance(answer, str):
@@ -111,7 +122,7 @@ def upload_document():
 def get_travel_plans():
     """Get list of all travel plan files"""
     try:
-        travel_plans_dir = os.path.join(os.path.dirname(__file__), '..', 'travel_plans')
+        travel_plans_dir = os.path.join(os.path.dirname(__file__), '..', 'documents/travel_plans')
         
         if not os.path.exists(travel_plans_dir):
             return jsonify({'plans': []})
@@ -145,7 +156,7 @@ def get_travel_plans():
 def get_travel_plan(filename):
     """Get content of a specific travel plan"""
     try:
-        travel_plans_dir = os.path.join(os.path.dirname(__file__), '..', 'travel_plans')
+        travel_plans_dir = os.path.join(os.path.dirname(__file__), '..', 'documents/travel_plans')
         filepath = os.path.join(travel_plans_dir, filename)
         
         if not os.path.exists(filepath):
@@ -171,7 +182,7 @@ def get_travel_plan(filename):
 def delete_travel_plan(filename):
     """Delete a specific travel plan"""
     try:
-        travel_plans_dir = os.path.join(os.path.dirname(__file__), '..', 'travel_plans')
+        travel_plans_dir = os.path.join(os.path.dirname(__file__), '..', 'documents/travel_plans')
         filepath = os.path.join(travel_plans_dir, filename)
         
         if not os.path.exists(filepath):
@@ -188,7 +199,7 @@ def delete_travel_plan(filename):
 def get_todo_lists():
     """Get list of all todo lists"""
     try:
-        todo_lists_dir = os.path.join(os.path.dirname(__file__), '..', 'todo_lists')
+        todo_lists_dir = os.path.join(os.path.dirname(__file__), '..', 'documents/todo_lists')
         
         if not os.path.exists(todo_lists_dir):
             return jsonify({'lists': []})
@@ -225,7 +236,7 @@ def get_todo_lists():
 def get_todo_list(filename):
     """Get content of a specific todo list"""
     try:
-        todo_lists_dir = os.path.join(os.path.dirname(__file__), '..', 'todo_lists')
+        todo_lists_dir = os.path.join(os.path.dirname(__file__), '..', 'documents/todo_lists')
         filepath = os.path.join(todo_lists_dir, filename)
         
         if not os.path.exists(filepath):
@@ -267,7 +278,7 @@ def update_todo_list_endpoint(filename):
 def delete_todo_list(filename):
     """Delete a specific todo list"""
     try:
-        todo_lists_dir = os.path.join(os.path.dirname(__file__), '..', 'todo_lists')
+        todo_lists_dir = os.path.join(os.path.dirname(__file__), '..', 'documents/todo_lists')
         filepath = os.path.join(todo_lists_dir, filename)
         
         if not os.path.exists(filepath):
@@ -284,10 +295,10 @@ def delete_todo_list(filename):
 def get_budgets():
     """Get list of all budgets"""
     try:
-        budgets_dir = os.path.join(os.path.dirname(__file__), '..', 'budgets')
+        budgets_dir = os.path.join(os.path.dirname(__file__), '..', 'documents/budgets')
         
         if not os.path.exists(budgets_dir):
-            return jsonify({'budgets': []})
+            return jsonify({'documents/budgets': []})
         
         budgets = []
         for filename in os.listdir(budgets_dir):
@@ -314,7 +325,7 @@ def get_budgets():
         # Sort by creation time (newest first)
         budgets.sort(key=lambda x: x['created'], reverse=True)
         
-        return jsonify({'budgets': budgets})
+        return jsonify({'documents/budgets': budgets})
     
     except Exception as e:
         print(f"Error getting budgets: {str(e)}")
@@ -324,7 +335,7 @@ def get_budgets():
 def get_budget(filename):
     """Get content of a specific budget"""
     try:
-        budgets_dir = os.path.join(os.path.dirname(__file__), '..', 'budgets')
+        budgets_dir = os.path.join(os.path.dirname(__file__), '..', 'documents/budgets')
         filepath = os.path.join(budgets_dir, filename)
         
         if not os.path.exists(filepath):
@@ -366,7 +377,7 @@ def update_budget_endpoint(filename):
 def delete_budget(filename):
     """Delete a specific budget"""
     try:
-        budgets_dir = os.path.join(os.path.dirname(__file__), '..', 'budgets')
+        budgets_dir = os.path.join(os.path.dirname(__file__), '..', 'documents/budgets')
         filepath = os.path.join(budgets_dir, filename)
         
         if not os.path.exists(filepath):
@@ -377,6 +388,74 @@ def delete_budget(filename):
     
     except Exception as e:
         print(f"Error deleting budget: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/documents/list', methods=['GET'])
+def list_all_documents():
+    """List all documents with their metadata"""
+    try:
+        from middleware import create_middleware_stack
+        middleware = create_middleware_stack()
+        
+        summary = middleware['document'].get_document_summary()
+        statistics = middleware['document'].get_document_statistics() if hasattr(middleware['document'], 'get_document_statistics') else {}
+        
+        return jsonify({
+            'summary': summary,
+            'statistics': statistics,
+            'message': 'Documents listed successfully'
+        })
+    
+    except Exception as e:
+        print(f"Error listing documents: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/documents/search', methods=['POST'])
+def search_documents():
+    """Search documents by keyword"""
+    try:
+        data = request.get_json()
+        keyword = data.get('keyword', '')
+        max_results = data.get('max_results', 5)
+        
+        if not keyword:
+            return jsonify({'error': 'Keyword is required'}), 400
+        
+        from middleware import create_middleware_stack
+        middleware = create_middleware_stack()
+        
+        context = middleware['document'].get_relevant_context(keyword)
+        
+        return jsonify({
+            'keyword': keyword,
+            'context': context,
+            'message': f'Search completed for: {keyword}'
+        })
+    
+    except Exception as e:
+        print(f"Error searching documents: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/documents/read/<filename>', methods=['GET'])
+def read_document(filename):
+    """Read a specific document by filename"""
+    try:
+        from middleware import create_middleware_stack
+        middleware = create_middleware_stack()
+        
+        content = middleware['document'].read_specific_document(filename)
+        
+        if content is None:
+            return jsonify({'error': 'Document not found'}), 404
+        
+        return jsonify({
+            'filename': filename,
+            'content': content,
+            'message': f'Document read successfully: {filename}'
+        })
+    
+    except Exception as e:
+        print(f"Error reading document: {str(e)}")
         return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/health', methods=['GET'])

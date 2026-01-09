@@ -3,13 +3,12 @@ from tool_actions import handle_adding_todo, create_new_todo_list
 from langchain_core.tools import tool
 from typing import Optional, List, Dict, Any
 from langchain.tools import tool
-
     
 @tool 
 def create_todo_list_tool(title: str, items: Optional[List[str]] = None) -> str:
     """
     Use this tool to create a new todo list with a given title, and add items to it if the user specifies.
-    The todo list should be saved as a json file in the 'todo_lists' directory. 
+    The todo list should be saved as a json file in the 'documents/todo_lists' directory. 
 
     Format the title and add a releveant emoji to display alongside the title in the todo list app. 
 
@@ -33,10 +32,11 @@ def create_todo_list_tool(title: str, items: Optional[List[str]] = None) -> str:
     return f"Created a new todo list called '{title}'! You can add more items to it at any time."
 
 @tool
-def add_todo_item_tool(items: Optional[List[str]] = None) -> str:
+def add_todo_item_tool(items: List[str], filename: Optional[str] = None) -> str:
     """
-    Use this tool to add items to the most recent todo list. 
-    
+    Use this tool to add items to add to the specified todo list, or the most recent todo list if none is specified.
+    If the user specifies an existing todo list, use your context to determine which exisiting file to add to.
+
     IMPORTANT: The 'items' parameter must be a list of individual strings, where each string is a separate todo item.
     
     For example:
@@ -50,11 +50,13 @@ def add_todo_item_tool(items: Optional[List[str]] = None) -> str:
     If the user adds an item that already exists in the todo list, it should not be added again.
     
     :param items: List of todo item strings to add to the most recent todo list
-    :type items: Optional[List[str]]
+    :type items: List[str]
+    :param filename: Optional filename of the todo list to add items to
+    :type filename: Optional[str]
     :return: Confirmation message about the items added
     :rtype: str
     """
-    response = handle_adding_todo(items)
+    response = handle_adding_todo(items, filename)
     return response
 
 @tool
@@ -73,6 +75,24 @@ def final_answer_tool(answer: str, tools_used: Optional[List[str]] = None) -> Di
         tools_used = []
     return {"answer": answer, "tools_used": tools_used}
     
+
+@tool(response_format="content_and_artifact")
+def retrieve_context(query: str):
+    """
+    Use this tool to retrieve relevant documents and information from those documents in the vector store based on the user's query.
+    
+    :param query: Description
+    :type query: str
+    """
+
+    from documents import vectorstore
+    
+    retrieved_docs = vectorstore.similarity_search(query)
+    serialized = "\n\n".join(
+        (f"Source: {doc.metadata}\nContent: {doc.page_content}")
+        for doc in retrieved_docs
+    )
+    return serialized, retrieved_docs
 
 # class CreateTodoListTool(BaseTool):
 #     name: str = "create_todo_list"
@@ -194,7 +214,7 @@ def final_answer_tool(answer: str, tools_used: Optional[List[str]] = None) -> Di
 #     def _run(self, doc_type: str) -> str:
 #         try:
 #             if doc_type.lower() == 'plan':
-#                 travel_plans_dir = os.path.join(os.path.dirname(__file__), '..', 'travel_plans')
+#                 travel_plans_dir = os.path.join(os.path.dirname(__file__), '..', 'documents/travel_plans')
 #                 if os.path.exists(travel_plans_dir):
 #                     plan_files = [f for f in os.listdir(travel_plans_dir) if f.endswith('.txt')]
 #                     if plan_files:
@@ -202,7 +222,7 @@ def final_answer_tool(answer: str, tools_used: Optional[List[str]] = None) -> Di
 #                         return f"SHOW_PLAN:{plan_files[0]}"
 #                 return "No travel plans found."
 #             elif doc_type.lower() == 'todo':
-#                 todo_lists_dir = os.path.join(os.path.dirname(__file__), '..', 'todo_lists')
+#                 todo_lists_dir = os.path.join(os.path.dirname(__file__), '..', 'documents/todo_lists')
 #                 if os.path.exists(todo_lists_dir):
 #                     todo_files = [f for f in os.listdir(todo_lists_dir) if f.endswith('.json')]
 #                     if todo_files:
@@ -210,7 +230,7 @@ def final_answer_tool(answer: str, tools_used: Optional[List[str]] = None) -> Di
 #                         return f"SHOW_TODO:{todo_files[0]}"
 #                 return "No todo lists found."
 #             elif doc_type.lower() == 'budget':
-#                 budgets_dir = os.path.join(os.path.dirname(__file__), '..', 'budgets')
+#                 budgets_dir = os.path.join(os.path.dirname(__file__), '..', 'documents/budgets')
 #                 if os.path.exists(budgets_dir):
 #                     budget_files = [f for f in os.listdir(budgets_dir) if f.endswith('.json')]
 #                     if budget_files:

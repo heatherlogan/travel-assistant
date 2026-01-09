@@ -23,7 +23,7 @@ function App() {
   const [currentBudget, setCurrentBudget] = useState<Budget | null>(null);
   const [showDocumentPanel, setShowDocumentPanel] = useState(true);
   const [documentType, setDocumentType] = useState<'plan' | 'todo' | 'budget'>('plan');
-  const [activeTab, setActiveTab] = useState<'plans' | 'todos' | 'budgets'>('plans');
+  const [activeTab, setActiveTab] = useState<'plans' | 'todos' | 'documents/budgets'>('plans');
   const [availablePlans, setAvailablePlans] = useState<TravelPlanSummary[]>([]);
   const [availableTodos, setAvailableTodos] = useState<TodoListSummary[]>([]);
   const [availableBudgets, setAvailableBudgets] = useState<BudgetSummary[]>([]);
@@ -329,7 +329,7 @@ function App() {
     await loadAvailableDocuments();
   };
 
-  const handleTabChange = async (tab: 'plans' | 'todos' | 'budgets') => {
+  const handleTabChange = async (tab: 'plans' | 'todos' | 'documents/budgets') => {
     setActiveTab(tab);
     if (!showDocumentPanel) {
       setShowDocumentPanel(true);

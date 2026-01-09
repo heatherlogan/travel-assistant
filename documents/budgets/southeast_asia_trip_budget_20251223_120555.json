@@ -1,0 +1,13 @@
+{
+  "title": "Southeast Asia Trip Budget",
+  "created": "2025-12-23T12:05:55.269521",
+  "updated": "2025-12-23T12:05:55.836738",
+  "items": [
+    {
+      "id": 1,
+      "name": "Flight",
+      "amount": 500.0,
+      "created": "2025-12-23T12:05:55.836738"
+    }
+  ]
+}

@@ -10,7 +10,7 @@ import {
 
 interface DocumentPanelProps {
   showDocumentPanel: boolean;
-  activeTab: 'plans' | 'todos' | 'budgets';
+  activeTab: 'plans' | 'todos' | 'documents/budgets';
   currentPlan: TravelPlan | null;
   currentTodo: TodoList | null;
   currentBudget: Budget | null;
@@ -19,7 +19,7 @@ interface DocumentPanelProps {
   availableTodos: TodoListSummary[];
   availableBudgets: BudgetSummary[];
   onCloseDocumentPanel: () => void;
-  onTabChange: (tab: 'plans' | 'todos' | 'budgets') => Promise<void>;
+  onTabChange: (tab: 'plans' | 'todos' | 'documents/budgets') => Promise<void>;
   onSelectDocument: (filename: string, type: 'plan' | 'todo' | 'budget') => Promise<void>;
   onDeleteDocument: (filename: string, type: 'plan' | 'todo' | 'budget', event: React.MouseEvent) => Promise<void>;
   onUpdateTodoItem: (itemId: number, completed: boolean) => Promise<void>;
@@ -64,8 +64,8 @@ const DocumentPanel: React.FC<DocumentPanelProps> = ({
             ✅ Todo Lists ({availableTodos.length})
           </button>
           <button 
-            className={`tab ${activeTab === 'budgets' ? 'active' : ''}`}
-            onClick={() => onTabChange('budgets')}
+            className={`tab ${activeTab === 'documents/budgets' ? 'active' : ''}`}
+            onClick={() => onTabChange('documents/budgets')}
           >
             💰 Budgets ({availableBudgets.length})
           </button>
@@ -148,7 +148,7 @@ const DocumentPanel: React.FC<DocumentPanelProps> = ({
               </div>
             )}
             
-            {activeTab === 'budgets' && (
+            {activeTab === 'documents/budgets' && (
               <div className="document-list">
                 {availableBudgets.length === 0 ? (
                   <p className="empty-list">No budgets yet. Create some by saying "create a new budget"!</p>
@@ -195,7 +195,7 @@ const DocumentPanel: React.FC<DocumentPanelProps> = ({
                 className="back-button"
                 onClick={onBackToList}
               >
-                ← Back to {activeTab === 'plans' ? 'Travel Plans' : activeTab === 'todos' ? 'Todo Lists' : 'Budgets'}
+                ← Back to {activeTab === 'plans' ? 'Travel Plans' : activeTab === 'todos' ? 'Todo Lists' : 'documents/budgets'}
               </button>
               <h2>📋 {currentPlan.destination} Travel Plan</h2>
             </div>
@@ -212,7 +212,7 @@ const DocumentPanel: React.FC<DocumentPanelProps> = ({
                 className="back-button"
                 onClick={onBackToList}
               >
-                ← Back to {activeTab === 'plans' ? 'Travel Plans' : activeTab === 'todos' ? 'Todo Lists' : 'Budgets'}
+                ← Back to {activeTab === 'plans' ? 'Travel Plans' : activeTab === 'todos' ? 'Todo Lists' : 'documents/budgets'}
               </button>
               <h2>✅ {currentTodo.title}</h2>
             </div>
@@ -258,7 +258,7 @@ const DocumentPanel: React.FC<DocumentPanelProps> = ({
                 className="back-button"
                 onClick={onBackToList}
               >
-                ← Back to {activeTab === 'plans' ? 'Travel Plans' : activeTab === 'todos' ? 'Todo Lists' : 'Budgets'}
+                ← Back to {activeTab === 'plans' ? 'Travel Plans' : activeTab === 'todos' ? 'Todo Lists' : 'documents/budgets'}
               </button>
               <h2>💰 {currentBudget.title}</h2>
             </div>

@@ -2,11 +2,11 @@ import os
 import json
 from datetime import datetime
 import logging
-from typing import List
+from typing import List, Optional
 
 def create_new_todo_list(title, items):
     """Save todo list to a file"""
-    todo_lists_dir = os.path.join(os.path.dirname(__file__), "..", "todo_lists")
+    todo_lists_dir = os.path.join(os.path.dirname(__file__), "..", "documents/todo_lists")
     os.makedirs(todo_lists_dir, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -37,26 +37,41 @@ def create_new_todo_list(title, items):
     return filename
 
 
-def handle_adding_todo(items: List[str]):
-    logging.info("Handling adding todo items %s", items)
+def handle_adding_todo(items: List[str], filename: Optional[str] = None):
+    logging.info("Handling adding todo items %s to %s", items, filename)
     # Find the most recent todo list
-    todo_lists_dir = os.path.join(os.path.dirname(__file__), "..", "todo_lists")
+    todo_lists_dir = os.path.join(os.path.dirname(__file__), "..", "documents", "todo_lists")
     response = ""
+    todo_file = None
     if os.path.exists(todo_lists_dir):
         todo_files = [f for f in os.listdir(todo_lists_dir) if f.endswith(".json")]
         if todo_files:
-            # Get most recent todo list
-            todo_files.sort(
-                key=lambda f: os.path.getmtime(os.path.join(todo_lists_dir, f)),
-                reverse=True,
-            )
-            latest_todo = todo_files[0]
+            if filename:
+                # Use the specified filename
+                if filename in todo_files:
+                    todo_file = filename
+                else:
+                    response += f"\n\nCouldn't find todo list '{filename}'. Using the most recent one instead."
+                    # Get most recent todo list
+                    todo_files.sort(
+                        key=lambda f: os.path.getmtime(os.path.join(todo_lists_dir, f)),
+                        reverse=True,
+                    )
+                    todo_file = todo_files[0]
+            else:
+                # No filename provided, get most recent todo list
+                todo_files.sort(
+                    key=lambda f: os.path.getmtime(os.path.join(todo_lists_dir, f)),
+                    reverse=True,
+                )
+                todo_file = todo_files[0]
 
-            # Load the todo list
-            with open(
-                os.path.join(todo_lists_dir, latest_todo), "r", encoding="utf-8"
-            ) as f:
-                todo_data = json.load(f)
+            # Load the todo list (only if we have a valid todo_file)
+            if todo_file:
+                with open(
+                    os.path.join(todo_lists_dir, todo_file), "r", encoding="utf-8"
+                ) as f:
+                    todo_data = json.load(f)
 
                 # Check for duplicates and add items
                 for item in items:
@@ -75,7 +90,7 @@ def handle_adding_todo(items: List[str]):
                     todo_data["items"].append(new_item)
 
                 # Update the file
-                update_todo_list(latest_todo, todo_data["items"])
+                update_todo_list(todo_file, todo_data["items"])
                 
                 # Create a proper response message
                 if len(items) == 1:
@@ -94,7 +109,7 @@ def handle_adding_todo(items: List[str]):
 def update_todo_list(filename, items):
     """Update an existing todo list"""
     logging.info("Updating todo list with items... %s", items)
-    todo_lists_dir = os.path.join(os.path.dirname(__file__), "..", "todo_lists")
+    todo_lists_dir = os.path.join(os.path.dirname(__file__), "..", "documents/todo_lists")
     filepath = os.path.join(todo_lists_dir, filename)
 
     if not os.path.exists(filepath):

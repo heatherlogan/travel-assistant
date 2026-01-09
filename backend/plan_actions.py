@@ -1,12 +1,10 @@
 
 import os
-import json
 from datetime import datetime
-import logging
 
 def save_travel_plan(destination, content):
     """Save travel plan to a file"""
-    travel_plans_dir = os.path.join(os.path.dirname(__file__), "..", "travel_plans")
+    travel_plans_dir = os.path.join(os.path.dirname(__file__), "..", "documents", "travel_plans")
     os.makedirs(travel_plans_dir, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -19,4 +17,4 @@ def save_travel_plan(destination, content):
         f.write("=" * 50 + "\n\n")
         f.write(content)
 
-    return filename
+    return f"Saved travel plan to {filename}"

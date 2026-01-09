@@ -39,7 +39,7 @@ class DocumentMiddleware:
             # Filter by similarity threshold and format context
             context_parts = []
             for doc, score in relevant_docs:
-                if score <= self.similarity_threshold:  # Lower score = more similar
+                if score <= self.similarity_threshold:  
                     # Extract metadata for context
                     source = doc.metadata.get('source', 'Unknown')
                     filename = os.path.basename(source)

@@ -536,6 +536,101 @@
   padding: 1.5rem;
 }
 
+/* Markdown content styles */
+.markdown-content {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  line-height: 1.6;
+  color: #333;
+}
+
+.markdown-content .plan-h1 {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #2c3e50;
+  margin: 1.5rem 0 1rem 0;
+  border-bottom: 3px solid #3498db;
+  padding-bottom: 0.5rem;
+}
+
+.markdown-content .plan-h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #34495e;
+  margin: 1.3rem 0 0.8rem 0;
+  border-bottom: 2px solid #95a5a6;
+  padding-bottom: 0.3rem;
+}
+
+.markdown-content .plan-h3 {
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: #34495e;
+  margin: 1.2rem 0 0.7rem 0;
+  border-bottom: 1px solid #bdc3c7;
+  padding-bottom: 0.2rem;
+}
+
+.markdown-content .plan-bullet {
+  list-style: none;
+  position: relative;
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+  color: #444;
+}
+
+.markdown-content .plan-bullet::before {
+  content: '•';
+  color: #3498db;
+  font-weight: bold;
+  position: absolute;
+  left: 0;
+  font-size: 1.2rem;
+}
+
+.markdown-content .plan-bullet-list {
+  margin: 1rem 0;
+  padding: 0;
+}
+
+.markdown-content .plan-bullet-nested {
+  list-style: none;
+  position: relative;
+  margin: 0.3rem 0;
+  padding-left: 2rem;
+  color: #555;
+  font-size: 0.95rem;
+}
+
+.markdown-content .plan-bullet-nested::before {
+  content: '◦';
+  color: #7f8c8d;
+  font-weight: normal;
+  position: absolute;
+  left: 0.5rem;
+  font-size: 1rem;
+}
+
+.markdown-content .plan-separator {
+  border: none;
+  border-top: 2px solid #ecf0f1;
+  margin: 2rem 0;
+}
+
+.markdown-content .plan-text {
+  margin: 0.8rem 0;
+  color: #333;
+  line-height: 1.7;
+}
+
+.markdown-content br {
+  margin: 0.5rem 0;
+}
+
+.markdown-content strong {
+  font-weight: 600;
+  color: #2c3e50;
+}
+
 .document-content {
   flex: 1;
   overflow-y: auto;

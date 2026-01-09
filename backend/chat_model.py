@@ -2,7 +2,7 @@ import os
 import json
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from tools import create_todo_list_tool, add_todo_item_tool, final_answer_tool
+from tools import create_todo_list_tool, add_todo_item_tool, create_travel_plan_tool, final_answer_tool
 from document_tools import document_tools
 from langchain_core.runnables.base import RunnableSerializable
 from langchain_core.messages import ToolMessage
@@ -43,6 +43,7 @@ def get_agent_prompt():
 tools = [
     create_todo_list_tool,
     add_todo_item_tool,
+    create_travel_plan_tool,
     final_answer_tool,
 ] + document_tools
 

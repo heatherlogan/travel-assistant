@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { JSX } from 'react';
 import {
   TravelPlan,
   TodoList,
@@ -7,6 +7,107 @@ import {
   TodoListSummary,
   BudgetSummary
 } from './types';
+
+// Simple markdown renderer for travel plans
+const renderMarkdown = (text: string): JSX.Element => {
+  const lines = text.split('\n');
+  const elements: JSX.Element[] = [];
+  let key = 0;
+  let inBulletList = false;
+  let bulletItems: JSX.Element[] = [];
+
+  const flushBulletList = () => {
+    if (bulletItems.length > 0) {
+      elements.push(<ul key={key++} className="plan-bullet-list">{bulletItems}</ul>);
+      bulletItems = [];
+      inBulletList = false;
+    }
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // Handle headers (### and ##)
+    if (line.startsWith('### ')) {
+      flushBulletList();
+      elements.push(<h3 key={key++} className="plan-h3">{line.substring(4)}</h3>);
+    } else if (line.startsWith('## ')) {
+      flushBulletList();
+      elements.push(<h2 key={key++} className="plan-h2">{line.substring(3)}</h2>);
+    } else if (line.startsWith('# ')) {
+      flushBulletList();
+      elements.push(<h1 key={key++} className="plan-h1">{line.substring(2)}</h1>);
+    }
+    // Handle bullet points (** at start, - or * with optional spaces)
+    else if (line.match(/^(\s*)(\*\*|- |\* |•\s)/)) {
+      const match = line.match(/^(\s*)(\*\*|- |\* |•\s)(.*)/);
+      if (match) {
+        const indent = match[1].length;
+        const bulletText = match[3];
+        const renderedBulletText = renderInlineMarkdown(bulletText);
+        const indentClass = indent > 0 ? 'plan-bullet-nested' : 'plan-bullet';
+        bulletItems.push(<li key={key++} className={indentClass}>{renderedBulletText}</li>);
+        inBulletList = true;
+      }
+    }
+    // Handle empty lines
+    else if (line.trim() === '') {
+      if (!inBulletList) {
+        elements.push(<br key={key++} />);
+      }
+    }
+    // Handle regular text
+    else {
+      flushBulletList();
+      const renderedText = renderInlineMarkdown(line);
+      // Check if it's a line separator
+      if (line.includes('====') || line.includes('----')) {
+        elements.push(<hr key={key++} className="plan-separator" />);
+      } else {
+        elements.push(<p key={key++} className="plan-text">{renderedText}</p>);
+      }
+    }
+  }
+  
+  // Flush any remaining bullet items
+  flushBulletList();
+
+  return <div className="markdown-content">{elements}</div>;
+};
+
+// Helper function to render inline markdown (bold, italic, etc.)
+const renderInlineMarkdown = (text: string): (string | JSX.Element)[] => {
+  if (!text.includes('**') && !text.includes('*')) {
+    return [text];
+  }
+
+  const result: (string | JSX.Element)[] = [];
+  let currentIndex = 0;
+  let key = 0;
+
+  // Handle bold text (**text**)
+  const boldRegex = /\*\*(.*?)\*\*/g;
+  let match;
+  
+  while ((match = boldRegex.exec(text)) !== null) {
+    // Add text before the match
+    if (match.index > currentIndex) {
+      result.push(text.substring(currentIndex, match.index));
+    }
+    
+    // Add the bold text
+    result.push(<strong key={key++}>{match[1]}</strong>);
+    
+    currentIndex = match.index + match[0].length;
+  }
+  
+  // Add remaining text
+  if (currentIndex < text.length) {
+    result.push(text.substring(currentIndex));
+  }
+  
+  return result.length > 0 ? result : [text];
+};
 
 interface DocumentPanelProps {
   showDocumentPanel: boolean;
@@ -200,7 +301,7 @@ const DocumentPanel: React.FC<DocumentPanelProps> = ({
               <h2>📋 {currentPlan.destination} Travel Plan</h2>
             </div>
             <div className="document-text">
-              <pre>{currentPlan.content}</pre>
+              {renderMarkdown(currentPlan.content)}
             </div>
           </div>
         )}

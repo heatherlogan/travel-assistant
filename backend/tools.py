@@ -1,9 +1,11 @@
 from datetime import datetime
+from plan_actions import save_travel_plan
 from tool_actions import handle_adding_todo, create_new_todo_list
 from langchain_core.tools import tool
 from typing import Optional, List, Dict, Any
 from langchain.tools import tool
     
+############## Todo List Tools ##############
 @tool 
 def create_todo_list_tool(title: str, items: Optional[List[str]] = None) -> str:
     """
@@ -59,6 +61,38 @@ def add_todo_item_tool(items: List[str], filename: Optional[str] = None) -> str:
     response = handle_adding_todo(items, filename)
     return response
 
+
+
+################# Travel Planner tools #################
+
+@tool 
+def create_travel_plan_tool(destination: str, content: str) -> str:
+    """
+    Use this tool to create a new travel plan for a specified destination, or a general travel plan if not specified by the user.
+    Only suggest this tool when the user explicitly requests you to save the travel plan.
+    The plan contain activities, accommodation, dining options, and transport at the destination.
+
+    Use appropriate sections and formatting to organize the travel plan clearly.
+    Use either bullet points or free text to outline the travel plan details.
+    The travel plan should be saved as a text file in the 'documents/travel_plans' directory.
+
+    Store the travel plan with a filename format like 'destination_YYYYMMDD_HHMMSS.txt'.
+    If it is country specific, add the country flag as an emoji in the title of the travel plan.
+
+    :param destination: The destination for the travel plan (e.g., "Thailand")
+    :type destination: str
+    :param content: The content/details of the travel plan
+    :type content: str
+    :return: Confirmation message about the created travel plan
+    :rtype: str
+    """
+    response = save_travel_plan(destination, content)
+    return response
+
+
+
+
+
 @tool
 def final_answer_tool(answer: str, tools_used: Optional[List[str]] = None) -> Dict[str, Any]:
     """
@@ -74,78 +108,6 @@ def final_answer_tool(answer: str, tools_used: Optional[List[str]] = None) -> Di
     if tools_used is None:
         tools_used = []
     return {"answer": answer, "tools_used": tools_used}
-    
-
-@tool(response_format="content_and_artifact")
-def retrieve_context(query: str):
-    """
-    Use this tool to retrieve relevant documents and information from those documents in the vector store based on the user's query.
-    
-    :param query: Description
-    :type query: str
-    """
-
-    from documents import vectorstore
-    
-    retrieved_docs = vectorstore.similarity_search(query)
-    serialized = "\n\n".join(
-        (f"Source: {doc.metadata}\nContent: {doc.page_content}")
-        for doc in retrieved_docs
-    )
-    return serialized, retrieved_docs
-
-# class CreateTodoListTool(BaseTool):
-#     name: str = "create_todo_list"
-#     description: str = "Creates a new todo list. Input should be the title of the todo list."
-    
-#     def _run(self, title: str) -> str:
-#         try:
-#             filename = create_new_todo_list(title, [])
-#             return f"Created a new todo list called '{title}'! You can add items to it now."
-#         except Exception as e:
-#             return f"Error creating todo list: {str(e)}"
-    
-#     def _arun(self, title: str):
-#         raise NotImplementedError("This tool does not support async")
-
-# class AddTodoItemTool(BaseTool):
-#     name: str = "add_todo_item"
-#     description: str = "Adds an item to the most recent todo list. Input should be the item text to add."
-    
-#     def _run(self, item_text: str) -> str:
-#         try:
-#             todo_lists_dir = os.path.join(os.path.dirname(__file__), "..", "todo_lists")
-#             if os.path.exists(todo_lists_dir):
-#                 todo_files = [f for f in os.listdir(todo_lists_dir) if f.endswith(".json")]
-#                 if todo_files:
-#                     todo_files.sort(
-#                         key=lambda f: os.path.getmtime(os.path.join(todo_lists_dir, f)),
-#                         reverse=True,
-#                     )
-#                     latest_todo = todo_files[0]
-                    
-#                     with open(os.path.join(todo_lists_dir, latest_todo), "r", encoding="utf-8") as f:
-#                         todo_data = json.load(f)
-                    
-#                     new_item = {
-#                         "id": len(todo_data["items"]) + 1,
-#                         "text": item_text,
-#                         "completed": False,
-#                         "created": datetime.now().isoformat(),
-#                     }
-#                     todo_data["items"].append(new_item)
-                    
-#                     update_todo_list(latest_todo, todo_data["items"])
-#                     return f"Added '{item_text}' to your todo list!"
-#                 else:
-#                     return "No todo lists found. Create one first!"
-#             else:
-#                 return "No todo lists found. Create one first!"
-#         except Exception as e:
-#             return f"Error adding todo item: {str(e)}"
-    
-#     def _arun(self, item_text: str):
-#         raise NotImplementedError("This tool does not support async")
 
 # class CreateBudgetTool(BaseTool):
 #     name: str = "create_budget"
@@ -207,43 +169,7 @@ def retrieve_context(query: str):
 #     def _arun(self, input_str: str):
 #         raise NotImplementedError("This tool does not support async")
 
-# class ShowDocumentTool(BaseTool):
-#     name: str = "show_document"
-#     description: str = "Shows a document (travel plan, todo list, or budget). Input should be 'plan', 'todo', or 'budget'."
-    
-#     def _run(self, doc_type: str) -> str:
-#         try:
-#             if doc_type.lower() == 'plan':
-#                 travel_plans_dir = os.path.join(os.path.dirname(__file__), '..', 'documents/travel_plans')
-#                 if os.path.exists(travel_plans_dir):
-#                     plan_files = [f for f in os.listdir(travel_plans_dir) if f.endswith('.txt')]
-#                     if plan_files:
-#                         plan_files.sort(key=lambda f: os.path.getmtime(os.path.join(travel_plans_dir, f)), reverse=True)
-#                         return f"SHOW_PLAN:{plan_files[0]}"
-#                 return "No travel plans found."
-#             elif doc_type.lower() == 'todo':
-#                 todo_lists_dir = os.path.join(os.path.dirname(__file__), '..', 'documents/todo_lists')
-#                 if os.path.exists(todo_lists_dir):
-#                     todo_files = [f for f in os.listdir(todo_lists_dir) if f.endswith('.json')]
-#                     if todo_files:
-#                         todo_files.sort(key=lambda f: os.path.getmtime(os.path.join(todo_lists_dir, f)), reverse=True)
-#                         return f"SHOW_TODO:{todo_files[0]}"
-#                 return "No todo lists found."
-#             elif doc_type.lower() == 'budget':
-#                 budgets_dir = os.path.join(os.path.dirname(__file__), '..', 'documents/budgets')
-#                 if os.path.exists(budgets_dir):
-#                     budget_files = [f for f in os.listdir(budgets_dir) if f.endswith('.json')]
-#                     if budget_files:
-#                         budget_files.sort(key=lambda f: os.path.getmtime(os.path.join(budgets_dir, f)), reverse=True)
-#                         return f"SHOW_BUDGET:{budget_files[0]}"
-#                 return "No budgets found."
-#             else:
-#                 return "Invalid document type. Use 'plan', 'todo', or 'budget'."
-#         except Exception as e:
-#             return f"Error showing document: {str(e)}"
-    
-#     def _arun(self, doc_type: str):
-#         raise NotImplementedError("This tool does not support async")
+
 
 # class SaveTravelPlanTool(BaseTool):
 #     name: str = "save_travel_plan"

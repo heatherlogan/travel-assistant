@@ -5,84 +5,16 @@ from datetime import datetime
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
-from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import OpenAIEmbeddings
-from langchain.text_splitter import CharacterTextSplitter
-from langchain.chains import RetrievalQA
-from langchain_openai import ChatOpenAI
-from langchain_community.document_loaders import DirectoryLoader, TextLoader
-from langchain.prompts import PromptTemplate
-from agents import AddBudgetItemTool, AddTodoItemTool, CreateBudgetTool, CreateTodoListTool, SaveTravelPlanTool, ShowDocumentTool
-from prompt_templates import AGENT_PROMPT, AGENT_PROMPT, SYSTEM_PROMPT
-from actions import update_todo_list, update_budget
-from langchain.agents import create_agent, AgentType
+from documents import initialize_vectorstore, conversation_history, qa_chain
+from chat_model import CustomAgentExecutor
+from tool_actions import update_todo_list
 
 load_dotenv()
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler()  # This outputs to console
-    ]
-)
-
 agent = None
-
-tools = [
-    CreateTodoListTool(),
-    AddTodoItemTool(),
-    CreateBudgetTool(),
-    AddBudgetItemTool(),
-    ShowDocumentTool(),
-    SaveTravelPlanTool()
-]
 
 app = Flask(__name__)
 CORS(app, origins=[os.getenv('FRONTEND_URL', 'http://localhost:3000')])
-
-openai_api_key = os.getenv('OPENAI_API_KEY')
-if not openai_api_key:
-    raise ValueError("OPENAI_API_KEY environment variable is required")
-
-# Initialize LangChain components
-embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
-llm = ChatOpenAI(openai_api_key=openai_api_key)
-
-# Global variables
-vectorstore = None
-qa_chain = None
-conversation_history = []
-
-def initialize_vectorstore():
-
-    """Initialize the vector store with documents"""
-    global vectorstore, qa_chain
-    
-    # Create documents directory if it doesn't exist
-    documents_dir = os.path.join(os.path.dirname(__file__), '..', 'documents')
-    os.makedirs(documents_dir, exist_ok=True)
-    
-    # Load existing documents
-    documents = []
-    if os.path.exists(documents_dir) and os.listdir(documents_dir):
-        loader = DirectoryLoader(documents_dir, glob="*.txt", loader_cls=TextLoader)
-        documents = loader.load()
-    
-    # documents.append(Document(page_content=default_knowledge, metadata={"source": "default_knowledge"}))
-    
-    if documents:
-        text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
-        texts = text_splitter.split_documents(documents)
-        vectorstore = Chroma.from_documents(texts, embeddings)
-        qa_chain = RetrievalQA.from_chain_type(
-            llm=llm,
-            chain_type="stuff",
-            retriever=vectorstore.as_retriever(search_kwargs={"k": 3}),
-            chain_type_kwargs={"prompt": SYSTEM_PROMPT}
-        )
-
 
 @app.route('/chat', methods=['POST'])
 def chat():
@@ -102,81 +34,31 @@ def chat():
             initialize_vectorstore()
         
         # Initialize agent if not done
-        # if agent is None:
-        #     agent = initialize_agent(
-        #         tools, 
-        #         llm, 
-        #         agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION, 
-        #         verbose=True,
-        #         handle_parsing_errors=True
-        #     )
-        agent = create_agent("gpt-5", tools=tools)
-
-        # Variables to track what to return
-        plan_to_show = None
-        todo_to_show = None
-        budget_to_show = None
-        
-        # Prepare context from conversation history
-        context = "\n".join([f"User: {msg['user']}\nAssistant: {msg['assistant']}" for msg in conversation_history[-3:]])
-        
-        logging.info(f"Context for agent: {context}")
-
-        try:
-            # Use agent to process the message
-            response = agent.run(AGENT_PROMPT(context, user_message ))
-
-            logging.info(f"agent response: {response}")
+        if agent is None:
+            agent = CustomAgentExecutor(max_iterations=3)
             
-            # Check if agent response contains document show commands
-            if "SHOW_PLAN:" in response:
-                plan_to_show = response.split("SHOW_PLAN:")[1].strip()
-                response = response.replace(f"SHOW_PLAN:{plan_to_show}", "").strip()
-                if not response:
-                    response = "Here's your latest travel plan:"
-            elif "SHOW_TODO:" in response:
-                todo_to_show = response.split("SHOW_TODO:")[1].strip()
-                response = response.replace(f"SHOW_TODO:{todo_to_show}", "").strip()
-                if not response:
-                    response = "Here's your latest todo list:"
-            elif "SHOW_BUDGET:" in response:
-                budget_to_show = response.split("SHOW_BUDGET:")[1].strip()
-                response = response.replace(f"SHOW_BUDGET:{budget_to_show}", "").strip()
-                if not response:
-                    response = "Here's your latest budget:"
-                    
-        except Exception as agent_error:
-            logging.error(f"Agent error: {str(agent_error)}")
-            # Fallback to RAG if agent fails
-            if qa_chain:
-                enhanced_query = f"Context: {context}\nUser question: {user_message}\n\nPlease provide helpful travel advice for backpacking."
-                response = qa_chain.run(enhanced_query)
-            else:
-                response = "I'm sorry, I'm having trouble processing your request right now. Could you try asking again?"
+        answer = agent.invoke(input=user_message)
+
+        logging.info("Agent invocation completed: ", answer)
+        
+        # Parse the answer if it's a JSON string
+        if isinstance(answer, str):
+            try:
+                answer_data = json.loads(answer)
+                response_text = answer_data.get('answer', answer)
+            except json.JSONDecodeError:
+                response_text = answer
+        else:
+            response_text = str(answer)
         
         # Add to conversation history
         conversation_history.append({
             'user': user_message,
-            'assistant': response,
+            'assistant': response_text,
             'timestamp': datetime.now().isoformat()
         })
         
-        # Prepare response with optional documents to show
-        response_data = {
-            'response': response,
-            'timestamp': datetime.now().isoformat()
-        }
-        
-        if plan_to_show:
-            response_data['show_plan'] = plan_to_show
-        
-        if todo_to_show:
-            response_data['show_todo'] = todo_to_show
-        
-        if budget_to_show:
-            response_data['show_budget'] = budget_to_show
-        
-        return jsonify(response_data)
+        return jsonify({'response': response_text})
     
     except Exception as e:
         print(f"Error in chat endpoint: {str(e)}")

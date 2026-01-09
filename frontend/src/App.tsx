@@ -236,6 +236,35 @@ function App() {
         } else if (data.show_budget) {
           await loadBudget(data.show_budget);
         }
+        
+        // Store current todo info before refresh
+        const wasViewingTodo = currentTodo && documentType === 'todo';
+        const currentTodoTitle = currentTodo?.title;
+        const currentTodoCreated = currentTodo?.created;
+        
+        // Refresh available documents after each chat response in case new ones were created
+        // or existing ones were modified (especially todo lists when items are added)
+        await loadAvailableDocuments();
+        
+        // If we were viewing a todo list and the response might have modified it,
+        // refresh the current todo list
+        if (wasViewingTodo && currentTodoTitle) {
+          // Find the most recently updated todo list that matches our current one
+          try {
+            const todosResponse = await fetch('http://localhost:5000/todo-lists');
+            if (todosResponse.ok) {
+              const todosData = await todosResponse.json();
+              const matchingTodo = todosData.lists?.find((todo: TodoListSummary) => 
+                todo.title === currentTodoTitle || todo.created === currentTodoCreated
+              );
+              if (matchingTodo) {
+                await loadTodoList(matchingTodo.filename);
+              }
+            }
+          } catch (error) {
+            console.error('Error refreshing current todo list:', error);
+          }
+        }
       } else {
         // Update the last message with error response
         setMessages(prev => {

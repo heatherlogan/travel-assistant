@@ -1,4 +1,4 @@
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 
 
 system_role = "Your role is to assist the user plan their backpacking travel holiday. " \
